@@ -17,3 +17,11 @@ class CharacterTokenizer:
 
     def decode(self, vector: List[int]):
         return "".join([self.decoder[i] for i in vector])
+
+
+if __name__ == "__main__":
+    tokenizer = CharacterTokenizer()
+    tokenizer.fit("Hello world!")
+    x = tokenizer.encode("world!")
+    print(x)
+    print(tokenizer.decode(x))
