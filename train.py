@@ -6,6 +6,9 @@ from models import BigramModel
 
 BLOCK_SIZE = 8
 BATCH_SIZE = 32
+EVAL_ITERS = 200
+MAX_ITERS = 3000
+EVAL_INTERVAL = 100
 
 torch.manual_seed(1337)
 
@@ -41,11 +44,25 @@ def get_batch(data):
     return torch.stack(x), torch.stack(y)
 
 
+@torch.no_grad()
+def estimate_loss(model, train_data, val_data):
+    out = dict()
+    model.eval()
+    for split, data in {'train': train_data, 'val': val_data}.items():
+        losses = torch.zeros(EVAL_ITERS)
+        for k in range(EVAL_ITERS):
+            logits, loss = model(*get_batch(data))
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    model.train()
+    return out
+
+
 def train():
     text = load_data()
     tokenizer = fit_save_tokenizer(text)
     data = torch.tensor(tokenizer.encode(text), dtype=torch.long).to(DEVICE)
-    train_data, test_data = train_test_split(data, train_size=0.9)
+    train_data, val_data = train_test_split(data, train_size=0.9)
 
     model = BigramModel(len(tokenizer.encoder))
     model.to(DEVICE)
@@ -54,7 +71,11 @@ def train():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
-    for steps in range(20000):
+    for i in range(MAX_ITERS):
+        if not i % EVAL_INTERVAL:
+            losses = estimate_loss(model, train_data, val_data)
+            print(f"step {i} train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
         xb, yb = get_batch(train_data)
 
         logits, loss = model(xb, yb)
