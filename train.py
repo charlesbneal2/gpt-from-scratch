@@ -5,9 +5,16 @@ from sklearn.model_selection import train_test_split
 from models import BigramModel
 
 BLOCK_SIZE = 8
-BATCH_SIZE = 4
+BATCH_SIZE = 32
 
 torch.manual_seed(1337)
+
+if torch.cuda.is_available():
+    print("GPU is available!")
+    DEVICE = torch.device("cuda")
+else:
+    print("No GPU available. Training will run on CPU.")
+    DEVICE = torch.device("cpu")
 
 
 def load_data():
@@ -37,19 +44,27 @@ def get_batch(data):
 def train():
     text = load_data()
     tokenizer = fit_save_tokenizer(text)
-    data = torch.tensor(tokenizer.encode(text), dtype=torch.long)
+    data = torch.tensor(tokenizer.encode(text), dtype=torch.long).to(DEVICE)
     train_data, test_data = train_test_split(data, train_size=0.9)
 
-    xb, yb = get_batch(train_data)
-    print("inputs:")
-    print(xb.shape)
-    print(xb)
-    print("targets:")
-    print(yb.shape)
-    print(yb)
-    bigram_model = BigramModel(len(tokenizer.encoder))
-    out = bigram_model(xb, yb)
-    print(out.shape)
+    model = BigramModel(len(tokenizer.encoder))
+    model.to(DEVICE)
+    print(tokenizer.decode(
+        model.generate(torch.zeros((1, 1), dtype=torch.long).to(DEVICE), max_new_tokens=100)[0].tolist()))
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+
+    for steps in range(20000):
+        xb, yb = get_batch(train_data)
+
+        logits, loss = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+    print(loss.item())
+    print(tokenizer.decode(
+        model.generate(torch.zeros((1, 1), dtype=torch.long).to(DEVICE), max_new_tokens=500)[0].tolist()))
 
 
 if __name__ == "__main__":
