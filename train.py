@@ -3,12 +3,16 @@ import pickle
 import torch
 from sklearn.model_selection import train_test_split
 from models import BigramModel
+from torch.nn import functional as F
+
 
 BLOCK_SIZE = 8
 BATCH_SIZE = 32
 EVAL_ITERS = 200
-MAX_ITERS = 3000
-EVAL_INTERVAL = 100
+MAX_ITERS = 5000
+EVAL_INTERVAL = 500
+N_EMBED = 32
+LR = 1e-3
 
 torch.manual_seed(1337)
 
@@ -44,6 +48,28 @@ def get_batch(data):
     return torch.stack(x), torch.stack(y)
 
 
+def attention(B, T, C, x):
+    xbow = torch.zeros((B, T, C)).to(DEVICE)
+    for b in range(B):
+        for t in range(T):
+            xprev = x[b, :t+1]
+            xbow[b,t] = torch.mean(xprev, 0)
+
+    # can reproduce the above using matrix multiplication against tril
+    wei = torch.tril(torch.ones(T, T))
+    xbow = torch.zeros((B, T, C)).to(DEVICE) @ (wei / torch.sum(wei, 1, keepdim=True)).to(DEVICE)
+
+    # softmax
+    tril = torch.tril(torch.ones(T, T))
+    wei = torch.zeros((T, T))
+    wei = wei.masked_fill(tril == 0, float('-inf'))
+    wei = F.softmax(wei, dim=-1)
+    xbow = wei @ x
+
+
+
+
+
 @torch.no_grad()
 def estimate_loss(model, train_data, val_data):
     out = dict()
@@ -64,12 +90,12 @@ def train():
     data = torch.tensor(tokenizer.encode(text), dtype=torch.long).to(DEVICE)
     train_data, val_data = train_test_split(data, train_size=0.9)
 
-    model = BigramModel(len(tokenizer.encoder))
+    model = BigramModel(len(tokenizer.encoder), BLOCK_SIZE, N_EMBED)
     model.to(DEVICE)
     print(tokenizer.decode(
         model.generate(torch.zeros((1, 1), dtype=torch.long).to(DEVICE), max_new_tokens=100)[0].tolist()))
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
     for i in range(MAX_ITERS):
         if not i % EVAL_INTERVAL:
